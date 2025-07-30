@@ -1,0 +1,33 @@
+# Base-------------------------------------
+albumentations==1.1.0
+matplotlib
+opencv-python>=4.1.1.26
+# opencv-python-headless>=4.1.1.26
+Pillow
+scikit-image
+scikit-learn
+scipy
+torch==2.7.0
+torchvision==0.22.0
+numpy
+pandas
+tqdm
+
+# Logging----------------------------------
+wandb
+tensorboard
+
+# Model summary----------------------------
+torchinfo
+
+# Extras-----------------------------------
+pycocotools==2.0.8
+setuptools==80.9.0
+torchmetrics # Evaluation
+
+
+
+# Export-----------------------------------
+# onnx==1.18.0
+# onnxruntime==1.22.0 # CPU execution.
+# onnxruntime-gpu==1.22.0 # GPU execution. [1.22.x for CUDA 12.x]
