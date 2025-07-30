@@ -8,13 +8,15 @@ NUM_WORKERS = 4 # Number of parallel workers for data loading.
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 # Training images and XML files directory.
-TRAIN_DIR = 'data/BCCD.v3-raw.voc/train'
+TRAIN_DIR = 'custom_data/train'
 # Validation images and XML files directory.
-VALID_DIR = 'data/BCCD.v3-raw.voc/valid'
+VALID_DIR = 'custom_data/valid'
+# Validation images and XML files directory.
+TEST_DIR = 'custom_data/test'
 
 # Classes: 0 index is reserved for background.
 CLASSES = [
-    '__background__', 'RBC', 'WBC', 'Platelets'
+    '__background__', 'plant', 'weed'
 ]
 
 NUM_CLASSES = len(CLASSES)
