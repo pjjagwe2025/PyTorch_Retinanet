@@ -3,15 +3,11 @@ import cv2
 import numpy as np
 import os
 import glob as glob
-
 from xml.etree import ElementTree as et
-from config import (
-    CLASSES, RESIZE_TO, TRAIN_DIR, BATCH_SIZE
-)
+from config import CLASSES, RESIZE_TO, TRAIN_DIR, BATCH_SIZE
 from torch.utils.data import Dataset, DataLoader
 from custom_utils import collate_fn, get_train_transform, get_valid_transform
 
-# The dataset class.
 class CustomDataset(Dataset):
     def __init__(self, dir_path, width, height, classes, transforms=None):
         self.transforms = transforms
@@ -19,130 +15,94 @@ class CustomDataset(Dataset):
         self.height = height
         self.width = width
         self.classes = classes
+        self.class_dict = {class_name: i + 1 for i, class_name in enumerate(classes[1:])}  # skip background index 0
         self.image_file_types = ['*.jpg', '*.jpeg', '*.png', '*.ppm', '*.JPG']
         self.all_image_paths = []
         
-        # Get all the image paths in sorted order.
         for file_type in self.image_file_types:
             self.all_image_paths.extend(glob.glob(os.path.join(self.dir_path, file_type)))
-        self.all_images = [image_path.split(os.path.sep)[-1] for image_path in self.all_image_paths]
+        self.all_images = [os.path.basename(p) for p in self.all_image_paths]
         self.all_images = sorted(self.all_images)
 
     def __getitem__(self, idx):
-        # Capture the image name and the full image path.
         image_name = self.all_images[idx]
         image_path = os.path.join(self.dir_path, image_name)
 
-        # Read and preprocess the image.
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
         image_resized = cv2.resize(image, (self.width, self.height))
         image_resized /= 255.0
-        image_resized = torch.tensor(image_resized, dtype=torch.float32).permute(2, 0, 1)  # <- Add this line
+        image_resized = torch.tensor(image_resized, dtype=torch.float32).permute(2, 0, 1)
 
-        # Capture the corresponding XML file for getting the annotations.
         annot_filename = os.path.splitext(image_name)[0] + '.xml'
-        # Read XML from the 'annotations' sibling directory
-        annot_file_path = os.path.join(
-            self.dir_path.replace('images', 'annotations'), annot_filename
-        )
+        annot_file_path = os.path.join(self.dir_path.replace('images', 'annotations'), annot_filename)
 
         boxes = []
         labels = []
         tree = et.parse(annot_file_path)
         root = tree.getroot()
-        
-        # Original image width and height.
+
         image_width = image.shape[1]
         image_height = image.shape[0]
-        
-        # Box coordinates for xml files are extracted 
-        # and corrected for image size given.
-        for member in root.findall('object'):
-            # Get label and map the `classes`.
-            labels.append(self.classes.index(member.find('name').text))
-            
-            # Left corner x-coordinates.
-            xmin = int(member.find('bndbox').find('xmin').text)
-            # Right corner x-coordinates.
-            xmax = int(member.find('bndbox').find('xmax').text)
-            # Left corner y-coordinates.
-            ymin = int(member.find('bndbox').find('ymin').text)
-            # Right corner y-coordinates.
-            ymax = int(member.find('bndbox').find('ymax').text)
-            
-            # Resize the bounding boxes according 
-            # to resized image `width`, `height`.
-            xmin_final = (xmin/image_width)*self.width
-            xmax_final = (xmax/image_width)*self.width
-            ymin_final = (ymin/image_height)*self.height
-            ymax_final = (ymax/image_height)*self.height
 
-            # Check that max coordinates are at least one pixel
-            # larger than min coordinates.
-            if xmax_final == xmin_final:
-                xmax_final += 1
-            if ymax_final == ymin_final:
-                ymax_final += 1
-            # Check that all coordinates are within the image.
-            if xmax_final > self.width:
-                xmax_final = self.width
-            if ymax_final > self.height:
-                ymax_final = self.height
-            
+        for member in root.findall('object'):
+            name = member.find('name').text.strip()
+            if name not in self.class_dict:
+                continue  # skip unknown classes
+
+            label = self.class_dict[name]
+            labels.append(label)
+
+            xmin = int(float(member.find('bndbox').find('xmin').text))
+            xmax = int(float(member.find('bndbox').find('xmax').text))
+            ymin = int(float(member.find('bndbox').find('ymin').text))
+            ymax = int(float(member.find('bndbox').find('ymax').text))
+
+            xmin_final = (xmin / image_width) * self.width
+            xmax_final = (xmax / image_width) * self.width
+            ymin_final = (ymin / image_height) * self.height
+            ymax_final = (ymax / image_height) * self.height
+
+            if xmax_final <= xmin_final or ymax_final <= ymin_final:
+                continue  # skip invalid box
+
             boxes.append([xmin_final, ymin_final, xmax_final, ymax_final])
-        
-        # Bounding box to tensor.
+
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
-        # Area of the bounding boxes.
-        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0]) if len(boxes) > 0 \
-            else torch.as_tensor(boxes, dtype=torch.float32)
-        # No crowd instances.
-        iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
-        # Labels to tensor.
         labels = torch.as_tensor(labels, dtype=torch.int64)
 
-        # Prepare the final `target` dictionary.
-        target = {}
-        target["boxes"] = boxes
-        target["labels"] = labels
-        target["area"] = area
-        target["iscrowd"] = iscrowd
-        image_id = torch.tensor([idx])
-        target["image_id"] = image_id
+        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0]) if len(boxes) > 0 else torch.tensor([])
+        iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
 
-        # Apply the image transforms.
-        # Commented out because augmentations already done
+        target = {
+            "boxes": boxes,
+            "labels": labels,
+            "area": area,
+            "iscrowd": iscrowd,
+            "image_id": torch.tensor([idx])
+        }
+
+        # Optional: Albumentations transforms (if needed)
         # if self.transforms:
-        #     sample = self.transforms(image = image_resized,
-        #                              bboxes = target['boxes'],
-        #                              labels = labels)
+        #     sample = self.transforms(image=image_resized, bboxes=target['boxes'], labels=labels)
         #     image_resized = sample['image']
-        #     target['boxes'] = torch.Tensor(sample['bboxes'])
-        
-        if np.isnan((target['boxes']).numpy()).any() or target['boxes'].shape == torch.Size([0]):
-            target['boxes'] = torch.zeros((0, 4), dtype=torch.int64)
+        #     target['boxes'] = torch.tensor(sample['bboxes'])
+
         return image_resized, target
 
     def __len__(self):
         return len(self.all_images)
 
-# Prepare the final datasets and data loaders.
+
+# Loader setup
 def create_train_dataset(DIR):
-    # Pass None to transforms to skip augmentation
-    train_dataset = CustomDataset(
-        DIR, RESIZE_TO, RESIZE_TO, CLASSES, transforms=None
-    )
-    return train_dataset
+    return CustomDataset(DIR, RESIZE_TO, RESIZE_TO, CLASSES, transforms=None)
 
 def create_valid_dataset(DIR):
-    valid_dataset = CustomDataset(
-        DIR, RESIZE_TO, RESIZE_TO, CLASSES, transforms=None
-    )
-    return valid_dataset
+    return CustomDataset(DIR, RESIZE_TO, RESIZE_TO, CLASSES, transforms=None)
 
 def create_train_loader(train_dataset, num_workers=0):
-    train_loader = DataLoader(
+    return DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
@@ -150,10 +110,9 @@ def create_train_loader(train_dataset, num_workers=0):
         collate_fn=collate_fn,
         drop_last=True
     )
-    return train_loader
 
 def create_valid_loader(valid_dataset, num_workers=0):
-    valid_loader = DataLoader(
+    return DataLoader(
         valid_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
@@ -161,20 +120,16 @@ def create_valid_loader(valid_dataset, num_workers=0):
         collate_fn=collate_fn,
         drop_last=True
     )
-    return valid_loader
 
 
-# execute `datasets.py` using Python command from 
-# Terminal to visualize sample images
-# USAGE: python datasets.py
+# Visualizer
 if __name__ == '__main__':
-    dataset = CustomDataset(
-        TRAIN_DIR, RESIZE_TO, RESIZE_TO, CLASSES
-    )
-    print(f"Number of training images: {len(dataset)}")
-    
-    # function to visualize a single sample
+    dataset = CustomDataset(TRAIN_DIR, RESIZE_TO, RESIZE_TO, CLASSES)
+
     def visualize_sample(image, target):
+        image = image.permute(1, 2, 0).numpy().copy() * 255
+        image = image.astype(np.uint8)
+
         for box_num in range(len(target['boxes'])):
             box = target['boxes'][box_num]
             label = CLASSES[target['labels'][box_num]]
@@ -196,8 +151,7 @@ if __name__ == '__main__':
             )
         cv2.imshow('Image', image)
         cv2.waitKey(0)
-        
-    NUM_SAMPLES_TO_VISUALIZE = 5
-    for i in range(NUM_SAMPLES_TO_VISUALIZE):
+
+    for i in range(3):
         image, target = dataset[i]
         visualize_sample(image, target)
