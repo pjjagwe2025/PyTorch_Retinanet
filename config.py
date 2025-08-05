@@ -1,28 +1,28 @@
 import torch
 
-BATCH_SIZE = 4 # Increase / decrease according to GPU memeory.
-RESIZE_TO = 640 # Resize the image for training and transforms.
-NUM_EPOCHS = 40 # Number of epochs to train for.
-NUM_WORKERS = 4 # Number of parallel workers for data loading.
+# Basic training configuration
+BATCH_SIZE = 4  # Adjust based on GPU memory
+RESIZE_TO = 640
+NUM_EPOCHS = 40
+NUM_WORKERS = 4
 
+# Set device
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-# Training images and XML files directory.
+# Custom dataset directories (after re-organizing with /images and /annotations folders)
 TRAIN_DIR = 'custom_data/train'
-# Validation images and XML files directory.
 VALID_DIR = 'custom_data/valid'
-# Validation images and XML files directory.
-TEST_DIR = 'custom_data/test'
+TEST_DIR  = 'custom_data/test'  # Optional: add this if you're using it in eval/inference
 
-# Classes: 0 index is reserved for background.
+# Custom classes (first index is background)
 CLASSES = [
     '__background__', 'plant', 'weed'
 ]
 
 NUM_CLASSES = len(CLASSES)
 
-# Whether to visualize images after crearing the data loaders.
+# Visualization toggle
 VISUALIZE_TRANSFORMED_IMAGES = False
 
-# Location to save model and plots.
+# Output directory
 OUT_DIR = 'outputs'
