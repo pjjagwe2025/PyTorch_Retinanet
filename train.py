@@ -106,7 +106,7 @@ def validate(valid_data_loader, model):
 
 if __name__ == '__main__':
     os.makedirs('outputs', exist_ok=True)
-    train_dataset = create_train_dataset(TRAIN_DIR)
+    train_dataset = create_train_dataset(TRAIN_DIR, use_augmentation=False)
     valid_dataset = create_valid_dataset(VALID_DIR)
     train_loader = create_train_loader(train_dataset, NUM_WORKERS)
     valid_loader = create_valid_loader(valid_dataset, NUM_WORKERS)
