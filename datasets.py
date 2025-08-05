@@ -154,11 +154,35 @@ class CustomDataset(Dataset):
 
         # Apply the image transforms.
         if self.transforms:
+            # Convert tensors to lists/numpy arrays for Albumentations
+            if len(boxes) > 0:
+                boxes_list = boxes.numpy().tolist()
+                labels_list = labels.numpy().tolist()
+            else:
+                boxes_list = []
+                labels_list = []
+                
             sample = self.transforms(image = image_resized,
-                                     bboxes = target['boxes'],
-                                     labels = labels)
+                                     bboxes = boxes_list,
+                                     labels = labels_list)
             image_resized = sample['image']
-            target['boxes'] = torch.Tensor(sample['bboxes'])
+            
+            # Handle the case where transforms might remove all bboxes
+            if len(sample['bboxes']) > 0:
+                target['boxes'] = torch.tensor(sample['bboxes'], dtype=torch.float32)
+                # Update labels if they were modified by transforms
+                if len(sample['labels']) > 0:
+                    target['labels'] = torch.tensor(sample['labels'], dtype=torch.int64)
+                    # Recalculate area and iscrowd for transformed boxes
+                    target['area'] = (target['boxes'][:, 3] - target['boxes'][:, 1]) * \
+                                   (target['boxes'][:, 2] - target['boxes'][:, 0])
+                    target['iscrowd'] = torch.zeros((target['boxes'].shape[0],), dtype=torch.int64)
+            else:
+                # All boxes were removed by transforms
+                target['boxes'] = torch.zeros((0, 4), dtype=torch.float32)
+                target['labels'] = torch.zeros((0,), dtype=torch.int64)
+                target['area'] = torch.zeros((0,), dtype=torch.float32)
+                target['iscrowd'] = torch.zeros((0,), dtype=torch.int64)
         
         return image_resized, target
 
